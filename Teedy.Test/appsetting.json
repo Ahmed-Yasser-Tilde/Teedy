@@ -1,0 +1,27 @@
+{
+  "AllowedHosts": "*",
+  "Teedy": {
+    "Credentials": {
+      "URL": "https://demo.teedy.io",
+      "Username": "admin",
+      "Password": "admin"
+
+    },
+    "Actions": {
+      "Login": "/api/user/login",
+      "AddFile": "/api/file",
+      "AddDocument": "/api/document",
+      "AttachFileToDocument": "/api/file",
+      "AddTag": "/api/tag",
+      "GetTag": "/api/tag"
+    },
+    "Headers": {
+      "Content-Type": "application/x-www-form-urlencoded"
+
+
+
+
+    }
+  }
+
+}
