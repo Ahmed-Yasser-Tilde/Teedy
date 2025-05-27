@@ -142,42 +142,37 @@ List<string> tagsNamesFromAlmasryaForm =
     "NameOfBranch", "Year", "Month", "Day", "etc"
 ];
 
-List<string> tagsNamesFromAlmasryaFormNotInTeedy = new List<string>();
-for(int i = 0; i < tagsNamesFromAlmasryaForm.Count; i++)
+List<string> tagsId = new List<string>();
+for (int i = 0; i < tagsNamesFromAlmasryaForm.Count; i++)
 {
-    bool found = false;
-    for(int j = 0; j < tags.Count; j++)
+    string tagId = string.Empty;
+    for (int j = 0; j < tags.Count; j++)
     {
         if (tagsNamesFromAlmasryaForm[i] == tags[j].Name)
         {
-            found = true;
+            tagId = tags[j].Id;
             break;
         }
     }
-    if (!found)
-        tagsNamesFromAlmasryaFormNotInTeedy.Add(tagsNamesFromAlmasryaForm[i]);
+    tagsId.Add(tagId);
 }
 
-for(int i = 0; i < tagsNamesFromAlmasryaFormNotInTeedy.Count; i++)
+for(int i = 0; i < tagsNamesFromAlmasryaForm.Count; i++)
 {
+    if(tagsId[i] != string.Empty)
+    {
+        continue;
+    }
+
     CreateTag createtag = new CreateTag()
     {
-        Name = tagsNamesFromAlmasryaFormNotInTeedy[i],
-        Color = "#008000"
+        Name = tagsNamesFromAlmasryaForm[i],
+        Color = "#008000",
+        ParentId = i == 0 ? null : tagsId[i - 1]
     };
     string tagId = await TeedyApiMethods.CreateTag(createtag, authToken);
-    tags.Add(new Tag
-    {
-        Name = tagsNamesFromAlmasryaFormNotInTeedy[i],
-        Color = "#008000",
-        Id = tagId
-    });
-}
+    tagsId[i] = tagId;
 
-List<string> tagsId = new List<string>();
-for(int i = 0; i < tags.Count; i++)
-{
-    tagsId.Add(tags[i].Id);
 }
 
 Document document = new Document
