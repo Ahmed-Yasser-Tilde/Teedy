@@ -14,6 +14,55 @@ using var loggerFactory = LoggerFactory.Create(builder =>
 
 ILogger logger = loggerFactory.CreateLogger("Teedy.Test");
 
+
+
+
+#region Almasrya solve production issue
+IConfiguration configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsetting.json")
+            .Build();
+
+TeedyApiMethods apiMethods = new TeedyApiMethods(configuration);
+
+string? authToken = await TeedyApiMethods.Login("admin", "admin");
+if(authToken == default)
+{
+    Console.WriteLine("Not Allow To login");
+    return;
+}
+
+string tegId = await TeedyApiMethods.CreateTag(new CreateTag
+{
+    Name = "Almasrya",
+    Color = "#008000"
+}, authToken);
+
+int limit = 10;
+int offset = 0;
+int totalDocuments = 0;
+
+do
+{
+    GetAllDocumentsResponse getAllDocumentsResponse = await TeedyApiMethods.GetDocuments(authToken, limit, offset);
+    totalDocuments = getAllDocumentsResponse.total;
+    foreach (GetDocument document in getAllDocumentsResponse.documents)
+    {
+        if(document.title.StartsWith("رقم الحركة"))
+        {
+            if (document.tags != null && document.tags.Count > 0)
+            {
+                await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, [tegId]);
+            }
+        }
+    }
+    offset += limit;
+} while (offset < totalDocuments);
+
+
+
+
+#region test 
 // Inject Json File
 //var configuration = new ConfigurationBuilder()
 //            .SetBasePath(Directory.GetCurrentDirectory())
@@ -38,7 +87,7 @@ ILogger logger = loggerFactory.CreateLogger("Teedy.Test");
 //{
 //    Title = "Today",   // Required field
 //    Language = "eng",            // Required field
-    
+
 //};
 //var documentId = await TeedyApiMethods.AddDocument(document, authToken);
 //Console.WriteLine($"Document ID : {documentId}");
@@ -117,24 +166,8 @@ ILogger logger = loggerFactory.CreateLogger("Teedy.Test");
 //        counter, tag.Id, tag.Name, tag.Color);
 //}
 
-//#endregion
 
-
-#region Almasrya
-IConfiguration configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsetting.json")
-            .Build();
-
-TeedyApiMethods apiMethods = new TeedyApiMethods(configuration);
-
-string? authToken = await TeedyApiMethods.Login("admin", "admin");
-if(authToken == default)
-{
-    Console.WriteLine("Not Allow To login");
-    return;
-}
-
+/*
 List<Tag> tags = await TeedyApiMethods.GetAllTags(authToken);
 
 List<string> tagsNamesFromAlmasryaForm =
@@ -185,6 +218,8 @@ Document document = new Document
 string documentId = await TeedyApiMethods.AddDocument(document, authToken);
 Console.WriteLine($"save {documentId} in receipt table in currex");
 Console.WriteLine("add new row equal {rec_id}, {documentation_type}, {documentation_path}, {title}, {description}");
+*/
+#endregion
 
 #endregion
 

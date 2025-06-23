@@ -1,7 +1,9 @@
 ﻿using Microsoft.Extensions.Configuration;
 using RestSharp;
+using System.Reflection.Metadata;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Teedy.ApiClient.Models.Document;
 using Teedy.ApiClient.Models.Tags;
 using AuthenticationException = Teedy.ApiClient.Models.Exceptions.AuthenticationException;
 
@@ -23,6 +25,111 @@ namespace Teedy.ApiClient
         {
             _configuration = configuration;
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public static async Task<GetAllDocumentsResponse> GetDocuments(string authToken, int limit, int offset)
+        {
+            try
+            {
+
+                string _baseUrl = _configuration["Teedy:Credentials:URL"];
+                RestClient _restClient = new RestClient(new RestClientOptions(_baseUrl));
+                RestRequest _restRequest = new RestRequest($"/api/document/list", Method.Get);
+
+                _restRequest.AddHeader("Cookie", "auth_token=" + authToken);
+                _restRequest.AddHeader("Content-Type", _configuration["Teedy:Headers:Content-Type"]);
+
+                _restRequest.AddParameter("limit", limit);
+                _restRequest.AddParameter("offset", offset);
+
+                RestResponse _restResponse = await _restClient.ExecuteAsync(_restRequest);
+
+
+                if (_restResponse.IsSuccessful && !string.IsNullOrEmpty(_restResponse.Content))
+                {
+                    try
+                    {
+                        GetAllDocumentsResponse jsonResponse = JsonSerializer.Deserialize<GetAllDocumentsResponse>(_restResponse.Content);
+                        return jsonResponse; // If parsing is successful, return true
+
+                    }
+                    catch
+                    {
+                        throw;
+                    }
+                }
+                else
+                {
+                    throw new Exception("Failed to retrieve documents. " + _restResponse.ErrorMessage); 
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public static async Task<GetAllDocumentsResponse> UpdateDoc(string authToken, string documentId, string title, List<string> tags)
+        {
+            try
+            {
+
+                string _baseUrl = _configuration["Teedy:Credentials:URL"];
+                RestClient _restClient = new RestClient(new RestClientOptions(_baseUrl));
+                RestRequest _restRequest = new RestRequest($"/api/document/{documentId}", Method.Post);
+
+                _restRequest.AddHeader("Cookie", "auth_token=" + authToken);
+                _restRequest.AddHeader("Content-Type", _configuration["Teedy:Headers:Content-Type"]);
+
+                _restRequest.AddParameter("id", documentId);
+                _restRequest.AddParameter("title", title);
+
+                _restRequest.AddParameter("tags", string.Join(",", tags));
+                _restRequest.AddParameter("language", "eng");
+                RestResponse _restResponse = await _restClient.ExecuteAsync(_restRequest);
+
+
+                if (_restResponse.IsSuccessful && !string.IsNullOrEmpty(_restResponse.Content))
+                {
+                    try
+                    {
+                        GetAllDocumentsResponse jsonResponse = JsonSerializer.Deserialize<GetAllDocumentsResponse>(_restResponse.Content);
+                        return jsonResponse; // If parsing is successful, return true
+
+                    }
+                    catch
+                    {
+                        throw;
+                    }
+                }
+                else
+                {
+                    throw new Exception("Failed to retrieve documents. " + _restResponse.ErrorMessage);
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         /// <summary>
         /// 
