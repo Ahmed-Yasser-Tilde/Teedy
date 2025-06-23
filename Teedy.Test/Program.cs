@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 using Teedy.ApiClient;
 using Teedy.ApiClient.Models;
@@ -42,10 +43,7 @@ do
         if(document.title.StartsWith("رقم الحركة"))
         {
             documentsToUpdate.Add((document.id, document.title, document.description));
-            if (document.tags != null && document.tags.Count > 0)
-            {
-                await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, [almasryaTagId]);
-            }
+            await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, [almasryaTagId]);
         }
     }
     offset += limit;
@@ -60,14 +58,41 @@ foreach(Tag tag in teedyExistTags)
     }
 }
 
-foreach(var (docId, docTitle, docDescription) in documentsToUpdate)
+string connectionString = "Server=your_server;Database=your_db;User Id=your_user;Password=your_password;";
+
+foreach (var (docId, docTitle, docDescription) in documentsToUpdate)
 {
 
     ReceiptJson receiptJson = JsonSerializer.Deserialize<ReceiptJson>(docDescription);
     // get from db receipt creation date (year/month/day), get branch, get cashboxs
 
+    //using (SqlConnection connection = new SqlConnection(connectionString))
+    //{
+    //    try
+    //    {
+    //        connection.Open();
+    //        Console.WriteLine("Connected successfully!");
+
+    //        // Execute query
+    //        string sql = "SELECT Id, Name FROM Customers";
+    //        using (SqlCommand command = new SqlCommand(sql, connection))
+    //        using (SqlDataReader reader = command.ExecuteReader())
+    //        {
+    //            while (reader.Read())
+    //            {
+    //                Console.WriteLine($"ID: {reader["Id"]}, Name: {reader["Name"]}");
+    //            }
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine($"Error: {ex.Message}");
+    //    }
+    //}
+
     await TeedyApiMethods.UpdateDoc(authToken, docId, docTitle, []);
 }
+
 
 async Task<List<string>> HandleCreateTages(string authToken, List<string> tagsNamesFromAlmasryaForm)
 {
@@ -161,6 +186,7 @@ async Task<List<string>> HandleCreateTages(string authToken, List<string> tagsNa
     }
 }
 
+// SELECT Example
 
 #region test 
 // Inject Json File
