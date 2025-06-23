@@ -15,7 +15,7 @@ namespace Teedy.ApiClient
     /// </summary>
     public class TeedyApiMethods
     {
-        private static IConfiguration? _configuration;
+        private static IConfiguration _configuration;
 
         /// <summary>
         /// 
@@ -74,7 +74,7 @@ namespace Teedy.ApiClient
         /// <summary>
         /// 
         /// </summary>
-        public static async Task<GetAllDocumentsResponse> UpdateDoc(string authToken, string documentId, string title, List<string> tags)
+        public static async Task<string> UpdateDoc(string authToken, string documentId, string title, List<string> tags)
         {
             try
             {
@@ -88,8 +88,10 @@ namespace Teedy.ApiClient
 
                 _restRequest.AddParameter("id", documentId);
                 _restRequest.AddParameter("title", title);
-
-                _restRequest.AddParameter("tags", string.Join(",", tags));
+                foreach(string tag in tags)
+                {
+                    _restRequest.AddParameter("tags", tag);
+                }
                 _restRequest.AddParameter("language", "eng");
                 RestResponse _restResponse = await _restClient.ExecuteAsync(_restRequest);
 
@@ -98,9 +100,54 @@ namespace Teedy.ApiClient
                 {
                     try
                     {
-                        GetAllDocumentsResponse jsonResponse = JsonSerializer.Deserialize<GetAllDocumentsResponse>(_restResponse.Content);
-                        return jsonResponse; // If parsing is successful, return true
+                        JsonElement jsonResponse = JsonSerializer.Deserialize<JsonElement>(_restResponse.Content);
+                        string updatedDocumentId = jsonResponse.GetProperty("id").GetString();
+                        return updatedDocumentId ?? _restResponse.Content;
+                    }
+                    catch
+                    {
+                        throw;
+                    }
+                }
+                else
+                {
+                    throw new Exception("Failed to retrieve documents. " + _restResponse.ErrorMessage);
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
 
+
+        public static async Task<bool> DeleteTag(string authToken, string tagId)
+        {
+            try
+            {
+
+                string _baseUrl = _configuration["Teedy:Credentials:URL"];
+                RestClient _restClient = new RestClient(new RestClientOptions(_baseUrl));
+                RestRequest _restRequest = new RestRequest($"/api/tag/{tagId}", Method.Post);
+
+                _restRequest.AddHeader("Cookie", "auth_token=" + authToken);
+                _restRequest.AddHeader("Content-Type", _configuration["Teedy:Headers:Content-Type"]);
+
+                _restRequest.AddParameter("id", tagId);
+                RestResponse _restResponse = await _restClient.ExecuteAsync(_restRequest);
+
+
+                if (_restResponse.IsSuccessful && !string.IsNullOrEmpty(_restResponse.Content))
+                {
+                    try
+                    {
+                        JsonElement jsonResponse = JsonSerializer.Deserialize<JsonElement>(_restResponse.Content);
+                        string status = jsonResponse.GetProperty("status").GetString();
+                        if (status == "ok")
+                        {
+                            return true;
+                        }
+                        return false;
                     }
                     catch
                     {
@@ -128,9 +175,6 @@ namespace Teedy.ApiClient
 
 
 
-
-
-
         /// <summary>
         /// 
         /// </summary>
@@ -140,7 +184,7 @@ namespace Teedy.ApiClient
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="AuthenticationException"></exception>
         /// <exception cref="ApplicationException"></exception>
-        public static async Task<string?> Login(string username, string password)
+        public static async Task<string> Login(string username, string password)
         {
             if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
             {

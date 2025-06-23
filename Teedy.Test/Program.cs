@@ -1,20 +1,9 @@
 ﻿using Microsoft.Extensions.Configuration;
+using System.Text.Json;
 using Teedy.ApiClient;
+using Teedy.ApiClient.Models;
 using Teedy.ApiClient.Models.Document;
 using Teedy.ApiClient.Models.Tags;
-using Microsoft.Extensions.Logging;
-using Teedy.ApiClient.Models.Tag;
-
-
-// Setup Logger
-using var loggerFactory = LoggerFactory.Create(builder =>
-{
-    builder.AddConsole();
-});
-
-ILogger logger = loggerFactory.CreateLogger("Teedy.Test");
-
-
 
 
 #region Almasrya solve production issue
@@ -32,7 +21,7 @@ if(authToken == default)
     return;
 }
 
-string tegId = await TeedyApiMethods.CreateTag(new CreateTag
+string almasryaTagId = await TeedyApiMethods.CreateTag(new CreateTag
 {
     Name = "Almasrya",
     Color = "#008000"
@@ -42,6 +31,8 @@ int limit = 10;
 int offset = 0;
 int totalDocuments = 0;
 
+List<(string docId, string docTitle, string docDescription)> documentsToUpdate = new List<(string, string, string)>();
+
 do
 {
     GetAllDocumentsResponse getAllDocumentsResponse = await TeedyApiMethods.GetDocuments(authToken, limit, offset);
@@ -50,16 +41,125 @@ do
     {
         if(document.title.StartsWith("رقم الحركة"))
         {
+            documentsToUpdate.Add((document.id, document.title, document.description));
             if (document.tags != null && document.tags.Count > 0)
             {
-                await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, [tegId]);
+                await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, [almasryaTagId]);
             }
         }
     }
     offset += limit;
 } while (offset < totalDocuments);
 
+List<Tag> teedyExistTags = await TeedyApiMethods.GetAllTags(authToken);
+foreach(Tag tag in teedyExistTags)
+{
+    if (tag.Id != almasryaTagId)
+    {
+        await TeedyApiMethods.DeleteTag(authToken, tag.Id);
+    }
+}
 
+foreach(var (docId, docTitle, docDescription) in documentsToUpdate)
+{
+
+    ReceiptJson receiptJson = JsonSerializer.Deserialize<ReceiptJson>(docDescription);
+    // get from db receipt creation date (year/month/day), get branch, get cashboxs
+
+    await TeedyApiMethods.UpdateDoc(authToken, docId, docTitle, []);
+}
+
+async Task<List<string>> HandleCreateTages(string authToken, List<string> tagsNamesFromAlmasryaForm)
+{
+    try
+    {
+        List<Tag> teedyExistTags = await TeedyApiMethods.GetAllTags(authToken);
+        List<(string tagId, string parentId)> tagsId = new List<(string, string)>();
+
+        #region Check Exists Almesrya Tags In Teedy
+        Tag branchTag = teedyExistTags.FirstOrDefault(tag => tag.Name == tagsNamesFromAlmasryaForm[0]);
+        if (branchTag == null)
+        {
+            // Branch tag does not exist, so all tages should be created from scratch and ignore all tags with same name
+            for (int i = 0; i < tagsNamesFromAlmasryaForm.Count; i++)
+            {
+                string tagId = string.Empty;
+                string parentId = string.Empty;
+                tagsId.Add((tagId, parentId));
+            }
+        }
+        else
+        {
+            tagsId.Add((branchTag.Id, string.Empty)); // Add branch tag with no parent
+            string lastTagId = branchTag.Id;
+            for (int i = 1; i < tagsNamesFromAlmasryaForm.Count; i++)
+            {
+                string tagId = string.Empty;
+                string parentId = string.Empty;
+                Tag tag = teedyExistTags.FirstOrDefault(t => t.Name == tagsNamesFromAlmasryaForm[i] && t.Parent == lastTagId);
+                if (tag == null)
+                {
+                    // Tag does not exist, so create it and all incoming tages should be created from scratch and ignore all tags with same name 
+                    for (int j = i; j < tagsNamesFromAlmasryaForm.Count; j++)
+                    {
+                        tagId = string.Empty;
+                        parentId = string.Empty;
+                        tagsId.Add((tagId, parentId));
+                    }
+                    break; // No need to continue checking for further tags
+                }
+                else
+                {
+                    tagId = tag.Id;
+                    parentId = tag.Parent;
+                    lastTagId = tagId; // Update lastTagId for next iteration
+                }
+                tagsId.Add((tagId, parentId));
+            }
+        }
+        #endregion
+
+        #region Handle Tags Tree
+        for (int i = 0; i < tagsNamesFromAlmasryaForm.Count; i++)
+        {
+            if (tagsId[i].tagId != string.Empty)
+            {
+                if (i > 0 && tagsId[i].parentId != tagsId[i - 1].tagId)
+                {
+                    CreateTag tag = new CreateTag()
+                    {
+                        Name = tagsNamesFromAlmasryaForm[i],
+                        Color = "#008000",
+                        ParentId = i == 0 ? null : tagsId[i - 1].tagId
+                    };
+                    string Id = await TeedyApiMethods.CreateTag(tag, authToken);
+                    tagsId[i] = (Id, tag.ParentId);
+                }
+                continue;
+            }
+            else
+            {
+                CreateTag createtag = new CreateTag()
+                {
+                    Name = tagsNamesFromAlmasryaForm[i],
+                    Color = "#008000",
+                    ParentId = i == 0 ? null : tagsId[i - 1].tagId
+                };
+                string tagId = await TeedyApiMethods.CreateTag(createtag, authToken);
+                tagsId[i] = (tagId, createtag.ParentId);
+            }
+        }
+        #endregion
+
+        return tagsId.Select(x => x.tagId).ToList();
+    }
+    catch (Exception ex)
+    {
+       /* ClsGlobal.LogError(ex);
+        ClsGlobal.LogError($"Error: {ex.Message}", "TeedyApiMethod");*/
+        return null;
+    }
+}
 
 
 #region test 
