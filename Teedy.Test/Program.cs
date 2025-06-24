@@ -1,99 +1,331 @@
 ﻿using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
-using System.Text.Json;
 using Teedy.ApiClient;
-using Teedy.ApiClient.Models;
 using Teedy.ApiClient.Models.Document;
 using Teedy.ApiClient.Models.Tags;
 
-
-#region Almasrya solve production issue
 IConfiguration configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsetting.json")
-            .Build();
-
-TeedyApiMethods apiMethods = new TeedyApiMethods(configuration);
-
-string? authToken = await TeedyApiMethods.Login("admin", "admin");
-if(authToken == default)
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsetting.json")
+                .Build();
+try
 {
-    Console.WriteLine("Not Allow To login");
-    return;
-}
+    TeedyApiMethods apiMethods = new TeedyApiMethods(configuration);
 
-string almasryaTagId = await TeedyApiMethods.CreateTag(new CreateTag
-{
-    Name = "Almasrya",
-    Color = "#008000"
-}, authToken);
-
-int limit = 10;
-int offset = 0;
-int totalDocuments = 0;
-
-List<(string docId, string docTitle, string docDescription)> documentsToUpdate = new List<(string, string, string)>();
-
-do
-{
-    GetAllDocumentsResponse getAllDocumentsResponse = await TeedyApiMethods.GetDocuments(authToken, limit, offset);
-    totalDocuments = getAllDocumentsResponse.total;
-    foreach (GetDocument document in getAllDocumentsResponse.documents)
+    string authToken = await TeedyApiMethods.Login(configuration["Teedy:Credentials:Username"], configuration["Teedy:Credentials:Password"]);
+    if (authToken == default)
     {
-        if(document.title.StartsWith("رقم الحركة"))
+        throw new Exception("Authentication failed. Please check your credentials.");
+    }
+
+    string almasryaTagId = await TeedyApiMethods.CreateTag(new CreateTag
+    {
+        Name = "Almasrya",
+        Color = "#008000"
+    }, authToken);
+
+    if (string.IsNullOrEmpty(almasryaTagId))
+    {
+        throw new Exception("Failed to create or retrieve the 'Almasrya' tag ID.");
+    }
+
+    int limit = 10;
+    int offset = 0;
+    int totalDocuments = 0;
+
+    List<(string docId, string docTitle, string docDescription, int rec_id)> documentsToUpdate = new List<(string, string, string, int)>();
+    do
+    {
+        GetAllDocumentsResponse getAllDocumentsResponse = await TeedyApiMethods.GetDocuments(authToken, limit, offset);
+        totalDocuments = getAllDocumentsResponse.total;
+        foreach (GetDocument document in getAllDocumentsResponse.documents)
         {
-            documentsToUpdate.Add((document.id, document.title, document.description));
-            await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, [almasryaTagId]);
+            if (document.title.StartsWith("رقم الحركة"))
+            {
+                int rec_id = int.Parse(new string(document.title.Where(char.IsDigit).ToArray()));
+                documentsToUpdate.Add((document.id, document.title, document.description, rec_id));
+                await TeedyApiMethods.UpdateDoc(authToken, document.id, document.title, document.description, new List<string> { almasryaTagId });
+            }
+        }
+        offset += limit;
+    } while (offset < totalDocuments);
+
+    List<Tag> teedyExistTags = await TeedyApiMethods.GetAllTags(authToken);
+    foreach (Tag tag in teedyExistTags)
+    {
+        if (tag.Id != almasryaTagId && tag.Color == "#008000")
+        {
+            await TeedyApiMethods.DeleteTag(authToken, tag.Id);
         }
     }
-    offset += limit;
-} while (offset < totalDocuments);
 
-List<Tag> teedyExistTags = await TeedyApiMethods.GetAllTags(authToken);
-foreach(Tag tag in teedyExistTags)
-{
-    if (tag.Id != almasryaTagId)
+    foreach (var (docId, docTitle, docDescription, rec_id) in documentsToUpdate)
     {
-        await TeedyApiMethods.DeleteTag(authToken, tag.Id);
+        deletaild deletaild = func(rec_id);
+        List<string> tagsNamesFromAlmasryaForm = new List<string>
+        {
+            $"({deletaild.cb_br_id}){deletaild.br_name.Trim().Replace(" ","_")}",
+            $"({deletaild.cb_br_id}){deletaild.cb_name.Trim().Replace(" ","_")}",
+            $"({deletaild.cb_br_id})سنة{deletaild.rec_date.Year.ToString().Trim().Replace(" ","_")}",
+            $"({deletaild.cb_br_id})شهر{deletaild.rec_date.Month.ToString().Trim().Replace(" ","_")}",
+            $"({deletaild.cb_br_id})يوم{deletaild.rec_date.Day.ToString().Trim().Replace(" ","_")}"
+        };
+
+        List<string> tagsIds = await HandleCreateTages(authToken, tagsNamesFromAlmasryaForm);
+        await TeedyApiMethods.UpdateDoc(authToken, docId, docTitle, docDescription, tagsIds);
+    }
+    Console.ReadKey();
+}
+catch (Exception ex)
+{
+    LogError($"An error occurred: {ex.Message}");
+}
+void LogError(string errorData)
+{
+    string logFile = AppContext.BaseDirectory + "currex.log";
+
+    FileInfo file = new FileInfo(logFile);
+    if (file.Exists)
+        if (file.Length > 1024 * 1024)
+            try
+            {
+                file.Delete();
+            }
+            catch { }
+    try
+    {
+        File.AppendAllText(logFile, DateTime.Now + ": " + errorData + Environment.NewLine + Environment.NewLine);
+    }
+    catch
+    { }
+}
+
+async Task<List<string>> HandleCreateTages(string authToken, List<string> tagsNamesFromAlmasryaFormOrder)
+{
+    try
+    {
+        List<Tag> teedyExistTags = await TeedyApiMethods.GetAllTags(authToken);
+        List<(string tagId, string parentId)> tagsId = new List<(string, string)>();
+
+        #region Check Exists Almesrya Tags In Teedy
+        Tag branchTag = teedyExistTags.FirstOrDefault(tag => tag.Name == tagsNamesFromAlmasryaFormOrder[0]);
+        if (branchTag == null)
+        {
+            // Branch tag does not exist, so all tages should be created from scratch and ignore all tags with same name
+            for (int i = 0; i < tagsNamesFromAlmasryaFormOrder.Count; i++)
+            {
+                string tagId = string.Empty;
+                string parentId = string.Empty;
+                tagsId.Add((tagId, parentId));
+            }
+        }
+        else
+        {
+            tagsId.Add((branchTag.Id, string.Empty)); // Add branch tag with no parent
+            string lastTagId = branchTag.Id;
+            for (int i = 1; i < tagsNamesFromAlmasryaFormOrder.Count; i++)
+            {
+                string tagId = string.Empty;
+                string parentId = string.Empty;
+                Tag tag = teedyExistTags.FirstOrDefault(t => t.Name == tagsNamesFromAlmasryaFormOrder[i] && t.Parent == lastTagId);
+                if (tag == null)
+                {
+                    // Tag does not exist, so create it and all incoming tages should be created from scratch and ignore all tags with same name 
+                    for (int j = i; j < tagsNamesFromAlmasryaFormOrder.Count; j++)
+                    {
+                        tagId = string.Empty;
+                        parentId = string.Empty;
+                        tagsId.Add((tagId, parentId));
+                    }
+                    break; // No need to continue checking for further tags
+                }
+                else
+                {
+                    tagId = tag.Id;
+                    parentId = tag.Parent;
+                    lastTagId = tagId; // Update lastTagId for next iteration
+                }
+                tagsId.Add((tagId, parentId));
+            }
+        }
+        #endregion
+
+        #region Handle Tags Tree
+        for (int i = 0; i < tagsNamesFromAlmasryaFormOrder.Count; i++)
+        {
+            if (tagsId[i].tagId != string.Empty)
+            {
+                if (i > 0 && tagsId[i].parentId != tagsId[i - 1].tagId)
+                {
+                    CreateTag tag = new CreateTag()
+                    {
+                        Name = tagsNamesFromAlmasryaFormOrder[i],
+                        Color = "#008000",
+                        ParentId = i == 0 ? null : tagsId[i - 1].tagId
+                    };
+                    string Id = await TeedyApiMethods.CreateTag(tag, authToken);
+                    tagsId[i] = (Id, tag.ParentId);
+                }
+                continue;
+            }
+            else
+            {
+                CreateTag createtag = new CreateTag()
+                {
+                    Name = tagsNamesFromAlmasryaFormOrder[i],
+                    Color = "#008000",
+                    ParentId = i == 0 ? null : tagsId[i - 1].tagId
+                };
+                string tagId = await TeedyApiMethods.CreateTag(createtag, authToken);
+                tagsId[i] = (tagId, createtag.ParentId);
+            }
+        }
+        #endregion
+
+        return tagsId.Select(x => x.tagId).ToList();
+    }
+    catch (Exception ex)
+    {
+        LogError(ex.Message);
+        LogError($"Error: {ex.Message}");
+        return null;
     }
 }
 
-string connectionString = "Server=your_server;Database=your_db;User Id=your_user;Password=your_password;";
-
-foreach (var (docId, docTitle, docDescription) in documentsToUpdate)
+deletaild func(int rec_id)
 {
+    string sqlString = @"
+                        SELECT br_name,cb_name,rec_date,cb_br_id FROM [receipts]
+                        inner join cashboxes on rec_from_cb_id= cb_id 
+                        inner join branches on cb_br_id=br_id";
+    sqlString += $" WHERE rec_id = {rec_id}";
 
-    ReceiptJson receiptJson = JsonSerializer.Deserialize<ReceiptJson>(docDescription);
-    // get from db receipt creation date (year/month/day), get branch, get cashboxs
+    try
+    {
+        deletaild? deletailds = null;
+        string connectionString = configuration["connectionDefualt:connection"];
+        using (SqlConnection connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            using (SqlCommand command = new SqlCommand(sqlString, connection))
+            {
+                using (SqlDataReader dr = command.ExecuteReader())
+                {
+                    if (!dr.HasRows)
+                    {
+                        throw new Exception("No records found");
+                    }
 
-    //using (SqlConnection connection = new SqlConnection(connectionString))
-    //{
-    //    try
-    //    {
-    //        connection.Open();
-    //        Console.WriteLine("Connected successfully!");
+                    if (dr.Read())
+                    {
+                        deletailds = new()
+                        {
+                            cb_br_id = dr["cb_br_id"].ToString(),
+                            br_name = dr["br_name"].ToString(),
+                            rec_date = Convert.ToDateTime(dr["rec_date"]),
+                            cb_name = dr["cb_name"].ToString()
+                        };
+                    }
+                }
+            }
+        }
+        return deletailds ?? throw new Exception("No data found for the provided rec_id.");
+    }
+    catch (SqlException ex)
+    {
+        LogError($"An error occurred: {ex.Message}");
+        throw new Exception("Database error: " + ex.Message);
+    }
+    catch (Exception ex)
+    {
+        LogError($"An error occurred: {ex.Message}");
+        throw new Exception("Error in Get function: " + ex.Message);
+    }
+}
 
-    //        // Execute query
-    //        string sql = "SELECT Id, Name FROM Customers";
-    //        using (SqlCommand command = new SqlCommand(sql, connection))
-    //        using (SqlDataReader reader = command.ExecuteReader())
-    //        {
-    //            while (reader.Read())
-    //            {
-    //                Console.WriteLine($"ID: {reader["Id"]}, Name: {reader["Name"]}");
-    //            }
-    //        }
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        Console.WriteLine($"Error: {ex.Message}");
-    //    }
-    //}
-
-    await TeedyApiMethods.UpdateDoc(authToken, docId, docTitle, []);
+public class deletaild
+{
+    public string cb_br_id { get; set; }
+    public string br_name { get; set; }
+    public DateTime rec_date { get; set; }
+    public string cb_name { get; set; }
 }
 
 
+/*
+try
+{
+    #region Almasrya solve production issue
+    IConfiguration configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsetting.json")
+                .Build();
+
+    TeedyApiMethods apiMethods = new TeedyApiMethods(configuration);
+
+    string authToken = await TeedyApiMethods.Login(configuration["Teedy:Credentials:Username"], configuration["Teedy:Credentials:Password"]);
+    if (authToken == default)
+    {
+        Console.WriteLine("Not Allow To login");
+        return;
+    }
+
+    string almasryaTagId = await TeedyApiMethods.CreateTag(new CreateTag
+    {
+        Name = "Almasrya",
+        Color = "#008000"
+    }, authToken);
+
+    int limit = 10;
+    int offset = 0;
+    int totalDocuments = 0;
+
+    List<(string docId, string docTitle, string docDescription)> documentsToUpdate = new List<(string, string, string)>();
+
+    do
+    {
+        GetAllDocumentsResponse getAllDocumentsResponse = await TeedyApiMethods.GetDocuments(authToken, limit, offset);
+        totalDocuments = getAllDocumentsResponse.total;
+        foreach (GetDocument document in getAllDocumentsResponse.documents)
+        {
+            if (document.title.StartsWith("رقم الحركة"))
+            {
+                documentsToUpdate.Add((document.id, document.title, document.description));
+            }
+        }
+        offset += limit;
+    } while (offset < totalDocuments);
+
+    foreach (var documentsToUpdat in documentsToUpdate)
+    {
+        LogError($"Document ID: {documentsToUpdat.docId}, Title: {documentsToUpdat.docTitle}, Description: {documentsToUpdat.docDescription}");
+    }
+    Console.ReadKey();
+}
+catch (Exception ex)
+{
+    LogError($"An error occurred: {ex.Message}");
+    // Log the error or handle it as needed
+}
+void LogError(string errorData)
+{
+    string logFile = AppContext.BaseDirectory + "currex.log";
+
+    FileInfo file = new FileInfo(logFile);
+    if (file.Exists)
+        if (file.Length > 1024 * 1024)
+            try
+            {
+                file.Delete();
+            }
+            catch { }
+    try
+    {
+        File.AppendAllText(logFile, DateTime.Now + ": " + errorData + Environment.NewLine + Environment.NewLine);
+    }
+    catch
+    { }
+}
 async Task<List<string>> HandleCreateTages(string authToken, List<string> tagsNamesFromAlmasryaForm)
 {
     try
@@ -180,13 +412,13 @@ async Task<List<string>> HandleCreateTages(string authToken, List<string> tagsNa
     }
     catch (Exception ex)
     {
-       /* ClsGlobal.LogError(ex);
-        ClsGlobal.LogError($"Error: {ex.Message}", "TeedyApiMethod");*/
+        /* ClsGlobal.LogError(ex);
+         ClsGlobal.LogError($"Error: {ex.Message}", "TeedyApiMethod");*/
+/*
         return null;
     }
 }
-
-// SELECT Example
+*/
 
 #region test 
 // Inject Json File
@@ -346,33 +578,3 @@ Console.WriteLine($"save {documentId} in receipt table in currex");
 Console.WriteLine("add new row equal {rec_id}, {documentation_type}, {documentation_path}, {title}, {description}");
 */
 #endregion
-
-#endregion
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
